@@ -4,27 +4,18 @@ _____________________
 Eleven Banded Non Symmetric Sparse Matrix - Dense Vector Multiplication 
 
 
-recvcounts and displs:
-Rank 0: recvcounts = 2500000, displs = 0
-Rank 1: recvcounts = 2500000, displs = 2500000
-Rank 2: recvcounts = 2500000, displs = 5000000
-Rank 3: recvcounts = 2500000, displs = 7500000
-Succesfully Completed....
+N = 16313, size = 8
+[Rank 0/8] offset=0, local_n=2040
 Showing results.....
 
 ...............................................
-.....SpMV (Row-block) with Size N=10000000, Proc Count=4 .....
+.....SpMV (Row-block) with Size N=16313, Proc Count=8 .....
 ...............................................
 
-Elapsed time [rank 0]: 33.00 ms
+Elapsed time @ [rank 0]: 0.036 ms
 
 
 ...............................................
 PAPI Profiling Results
 ...............................................
 
-y[0] = 1569999.000000
-y[1] = 1513012.000000
-y[2] = 1771254.000000
-y[3] = 2794089.000000
-y[4] = 2238098.000000

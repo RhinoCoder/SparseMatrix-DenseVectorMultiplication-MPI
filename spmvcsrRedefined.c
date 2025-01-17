@@ -3,13 +3,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <papi.h>
-
-/* ---------------------------------------------------------------------
- * Generate a banded CSR matrix (11-band) for only the local rows:
- *   rows [offset .. offset+local_n-1] out of total N.
- * Each row has up to 5 sub-diagonals and 5 super-diagonals.
- * ---------------------------------------------------------------------*/
-void GenerateElevenBandedCsrLocal(long long N,
+ 
+void GenerateElevenBandedCsrLocal(int rank,long long N,
                                   long long offset,
                                   long long local_n,
                                   long long **row_ptr,
@@ -38,7 +33,7 @@ void GenerateElevenBandedCsrLocal(long long N,
         nnz_per_row[i_local] = end_col - start_col + 1;
     }
 
-    // Prefix sum to build row_ptr
+ 
     (*row_ptr)[0] = 0;
     long long rwPtrBuilderCount;
     for (rwPtrBuilderCount = 1; rwPtrBuilderCount <= local_n; rwPtrBuilderCount++) {
@@ -68,13 +63,15 @@ void GenerateElevenBandedCsrLocal(long long N,
         {
 	   
     		if (j < 0 || j >= N) {
-        	fprintf(stderr, "Rank %d: col_ind[%lld] = %lld out of range during matrix generation!\n",rank, idx, j);
-        	MPI_Abort(MPI_COMM_WORLD, 1);
-	    	(*col_ind)[idx] = j;
+        	    fprintf(stderr, "Rank %d: col_ind[%lld] = %lld out of range during matrix generation!\n",rank, idx, j);
+                printf("Rank %d: col_ind[%lld] = %lld out of range during matrix generation!\n",rank, idx, j);     
+        	    MPI_Abort(MPI_COMM_WORLD, 1);
+                 
+	        }
+
+            (*col_ind)[idx] = j;
     		(*val)[idx] = (double)(rand() % 1000);
     		idx++;
-	}
-
 
         }
     }
@@ -207,7 +204,7 @@ int main(int argc, char *argv[])
     long long *row_ptr_local = NULL;
     long long *col_ind_local = NULL;
     double    *val_local     = NULL;
-    GenerateElevenBandedCsrLocal(N, offset, local_n,&row_ptr_local, &col_ind_local, &val_local);
+    GenerateElevenBandedCsrLocal(rank,N, offset, local_n,&row_ptr_local, &col_ind_local, &val_local);
     //print_memory_usage(rank,fp);	
     // Allocate x (the global vector). Each rank needs the entire x.
     double *x = (double *)malloc(N * sizeof(double));
@@ -215,16 +212,19 @@ int main(int argc, char *argv[])
         fprintf(stderr, "[Rank %d] failed to allocate x.\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
+
+    printf("Rank %d: local_n = %lld\n", rank, local_n);
+
     //print_memory_usage(rank,fp);
     // Rank 0 initializes x (random or otherwise)
     if (rank == 0) 
     {
         long long total_rows = 0;
-	int r;
-	for (r = 0; r < size; r++) {
-  		long long r_local_n = base + ((r < rem) ? 1 : 0);
- 	 	total_rows += r_local_n;
-	}
+	    int r;
+	    for (r = 0; r < size; r++) {
+  		    long long r_local_n = base + ((r < rem) ? 1 : 0);
+ 	 	    total_rows += r_local_n;
+	    }
 	printf("Total of local_n across all ranks = %lld (should be == N)\n", total_rows);
 
         long long i;
@@ -235,7 +235,10 @@ int main(int argc, char *argv[])
     }
    
     MPI_Barrier(MPI_COMM_WORLD);
-    //MPI_Request req_bcast;
+    // ----------------------------------------
+    // Non-blocking Broadcast of x
+    // ----------------------------------------
+    MPI_Request req_bcast;
     //int bCode = MPI_Bcast(x, (int)N, MPI_DOUBLE, 0, MPI_COMM_WORLD, &req_bcast);
     int bCode = MPI_Bcast(x, N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     if(bCode != MPI_SUCCESS)
@@ -252,8 +255,7 @@ int main(int argc, char *argv[])
      
     
     double *y_local = (double *)calloc(local_n, sizeof(double));
-    if (!y_local)
-    {
+    if (!y_local) {
         fprintf(stderr, "[Rank %d] failed to allocate y_local.\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
@@ -287,6 +289,9 @@ int main(int argc, char *argv[])
     double t1 = MPI_Wtime();
     double local_ms = (t1 - t0) * 1000.0;
 
+    // ----------------------------------------
+    // Non-blocking Gatherv of local y
+    // ----------------------------------------
     double *y_global  = NULL;
     int   *recvcounts = NULL;
     int   *displs     = NULL;
@@ -298,6 +303,7 @@ int main(int argc, char *argv[])
         displs     = (int *)malloc(size * sizeof(int));
 
         long long disp = 0;
+        
         int processors;
 
         for (processors = 0; processors < size; processors++)
@@ -340,7 +346,7 @@ int main(int argc, char *argv[])
         fprintf(fp,"...............................................\n");   
         fprintf(fp,".....SpMV (Row-block) with Size N=%lld, Proc Count=%d .....\n", N, size);
         fprintf(fp,"...............................................\n\n");        
-        fprintf(fp,"Elapsed time [rank 0]: %.2f ms\n\n\n", local_ms);
+        fprintf(fp,"Elapsed time @ [rank 0]: %.3f ms\n\n\n", local_ms);
         fprintf(fp,"...............................................\n");        
         fprintf(fp,"PAPI Profiling Results\n");        
         fprintf(fp,"...............................................\n\n");         
