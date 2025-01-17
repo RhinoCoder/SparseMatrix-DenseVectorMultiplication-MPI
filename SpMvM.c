@@ -86,7 +86,8 @@ void GenerateElevenBandedCsrLocal(long long rank, long long N,
  * ---------------------------------------------------------------------*/
 void spmv_csr_local(long long local_n,
                     long long offset,
-                    long long halo_start, /* global index of x_sub[0] */
+                    long long halo_start,
+		    long long local_x_size, 
                     const long long *row_ptr,
                     const long long *col_ind,
                     const double *val,
@@ -106,8 +107,12 @@ void spmv_csr_local(long long local_n,
             long long j_global = col_ind[k];
             /* Convert to local index for x_sub. */
             long long j_sub = j_global - halo_start;
-            sum += val[k] * x_sub[j_sub];
-        }
+	    if(j_sub >= 0 && j_sub < local_x_size)
+	    {
+            	sum += val[k] * x_sub[j_sub];
+            }
+	
+ 	}
         y_local[i_local] = sum;
     }
 }
@@ -236,7 +241,7 @@ int main(int argc, char *argv[])
 
     /* Time the local SpMV. */
     double t0 = MPI_Wtime();
-    spmv_csr_local(local_n, offset, halo_start, row_ptr_local, col_ind_local, val_local, x_sub, y_local);
+    spmv_csr_local(local_n, offset, halo_start,local_x_size, row_ptr_local, col_ind_local, val_local, x_sub, y_local);
     MPI_Barrier(MPI_COMM_WORLD);
     double t1 = MPI_Wtime();
     double local_ms = (t1 - t0) * 1000.0;
@@ -316,7 +321,6 @@ int main(int argc, char *argv[])
         free(y_global);
         free(recvcounts);
         free(displs);
-        fclose(fp);
     }
 
     /* Free local data. */
@@ -325,7 +329,7 @@ int main(int argc, char *argv[])
     free(row_ptr_local);
     free(col_ind_local);
     free(val_local);
-    
+    fclose(fp);
     MPI_Finalize();
     return 0;
 }
