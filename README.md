@@ -1,3 +1,3 @@
-## **Sparse Eleven Banded Matrix - Dense Vector Multiplication MPI    **
+## Sparse Eleven Banded Matrix - Dense Vector Multiplication MPI 
 Implementation of a parallel algorithm for multiplying a non-symmetric eleven-banded sparse matrix, represented in the compressed sparse row (CSR) format, with a dense vector is practiced on various sizes and approaches. 
 In order to achieve a higher scalability, possible memory exceed that can be emerge from distribution of large data is prevented using a locally generated and a chunk based computation approach. For parallelization, message passing interface (MPI) is used.
