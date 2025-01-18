@@ -1,0 +1,29 @@
+_____________________
+Term Project:
+_____________________
+
+> Eleven Banded Non Symmetric Sparse Matrix - Dense Vector Multiplication 
+
+N = 1923141, size = 8
+[Rank 0] recvCounts[0]: 240393, displs[0]: 0
+[Rank 0] recvCounts[1]: 240393, displs[1]: 240393
+[Rank 0] recvCounts[2]: 240393, displs[2]: 480786
+[Rank 0] recvCounts[3]: 240393, displs[3]: 721179
+[Rank 0] recvCounts[4]: 240393, displs[4]: 961572
+[Rank 0] recvCounts[5]: 240392, displs[5]: 1201965
+[Rank 0] recvCounts[6]: 240392, displs[6]: 1442357
+[Rank 0] recvCounts[7]: 240392, displs[7]: 1682749
+> Showing results.....
+
+yGlobal (first 5 entries): 258156.00 448382.00 1217432.00 1927472.00 1314332.00 
+...............................................
+.....SpMV (Row-block) with N=1923141, Proc Count=8 .....
+...............................................
+
+Elapsed time @ [rank 0]: 10.217 ms
+
+
+...............................................
+PAPI Profiling Results
+...............................................
+
