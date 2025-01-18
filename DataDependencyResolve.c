@@ -227,12 +227,13 @@ int main(int argc, char *argv[])
     // Fill send buffers with boundary values
     if (local_x_size >= 5)
     {
-        for (int i = 0; i < 5; i++)
+        int haloSend;
+        for (haloSend = 0;haloSend < 5; haloSend++)
         {
             if (offset > 0)
-                left_send[i] = x_sub[i]; // First 5 elements for left neighbor
+                left_send[haloSend] = x_sub[haloSend]; // First 5 elements for left neighbor
             if (offset + local_n < N)
-                right_send[i] = x_sub[local_x_size - 5 + i]; // Last 5 elements for right neighbor
+                right_send[haloSend] = x_sub[local_x_size - 5 + haloSend]; // Last 5 elements for right neighbor
         }
     }
 
@@ -273,6 +274,8 @@ int main(int argc, char *argv[])
         yGlobal = (double *)malloc(N * sizeof(double));
         recvCounts = (int *)malloc(size * sizeof(int));
         displs = (int *)malloc(size * sizeof(int));
+        
+        
         long long offset_r = 0;
         long long rr;
         for (rr = 0; rr < size; rr++)
