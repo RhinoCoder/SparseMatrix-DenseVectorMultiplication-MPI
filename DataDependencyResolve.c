@@ -11,57 +11,42 @@ void GenerateElevenBandedCsrLocal(long long rank, long long N,
                                   long long **row_ptr, long long **col_ind,
                                   double **val)
 {
-    // ----------------------------------------------------------------------
-    // 1) Compute halo_start, halo_end right away so we can do proper clipping.
-    // ----------------------------------------------------------------------
     long long halo_start = (offset - 5 < 0) ? 0 : offset - 5;
     long long halo_end = ((offset + local_n - 1) + 5 >= N)
                              ? (N - 1)
                              : (offset + local_n - 1 + 5);
 
-    // Optional safety check
     if (halo_start < 0 || halo_end >= N)
     {
         fprintf(stderr, "[Rank %lld] Halo region out of bounds: [%lld, %lld]\n",
                 rank, halo_start, halo_end);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-
-    // ----------------------------------------------------------------------
-    // 2) Allocate row_ptr and a temp array nnz_per_row (size local_n).
-    // ----------------------------------------------------------------------
     *row_ptr = (long long *)malloc((local_n + 1) * sizeof(long long));
     if (!(*row_ptr))
     {
-        fprintf(stderr, "[Rank %lld] Error: failed to allocate row_ptr.\n", rank);
+        fprintf(stderr, "[Rank %lld] Error allocate row_ptr.\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     long long *nnz_per_row = (long long *)calloc(local_n, sizeof(long long));
     if (!nnz_per_row)
     {
-        fprintf(stderr, "[Rank %lld] Error: failed to allocate nnz_per_row.\n", rank);
+        fprintf(stderr, "[Rank %lld] Error allocate nnz_per_row.\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    // ----------------------------------------------------------------------
-    // 3) First pass: For each local row, compute how many columns
-    //    actually lie in the clipped band [halo_start, halo_end].
-    // ----------------------------------------------------------------------
     long long i_local;
     for (i_local = 0; i_local < local_n; i_local++)
     {
         long long i_global = offset + i_local;
 
-        // Compute full 11-band range ...
         long long start_col = (i_global - 5 < 0) ? 0 : (i_global - 5);
         long long end_col = (i_global + 5 >= N) ? (N - 1) : (i_global + 5);
 
-        // ... then clip to [halo_start, halo_end].
         long long clipped_start = (start_col < halo_start) ? halo_start : start_col;
         long long clipped_end = (end_col > halo_end) ? halo_end : end_col;
 
-        // If there's no overlap, row has 0 columns
         if (clipped_end >= clipped_start)
         {
             nnz_per_row[i_local] = clipped_end - clipped_start + 1;
@@ -72,9 +57,6 @@ void GenerateElevenBandedCsrLocal(long long rank, long long N,
         }
     }
 
-    // ----------------------------------------------------------------------
-    // 4) Build row_ptr[] as the prefix sum of nnz_per_row[].
-    // ----------------------------------------------------------------------
     (*row_ptr)[0] = 0;
     long long i;
     for (i = 0; i < local_n; i++)
@@ -82,41 +64,27 @@ void GenerateElevenBandedCsrLocal(long long rank, long long N,
         (*row_ptr)[i + 1] = (*row_ptr)[i] + nnz_per_row[i];
     }
 
-    // local_nnz is row_ptr[local_n]
     long long local_nnz = (*row_ptr)[local_n];
 
-    // ----------------------------------------------------------------------
-    // 5) Allocate col_ind[] and val[] to match local_nnz
-    // ----------------------------------------------------------------------
     *col_ind = (long long *)malloc(local_nnz * sizeof(long long));
     *val = (double *)malloc(local_nnz * sizeof(double));
     if (!(*col_ind) || !(*val))
     {
-        fprintf(stderr, "[Rank %lld] Error: failed to allocate col_ind/val.\n", rank);
+        fprintf(stderr, "[Rank %lld] Error allocate col_ind/val.\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    // ----------------------------------------------------------------------
-    // 6) Second pass: Fill col_ind[] (and val[]) with the clipped columns.
-    // ----------------------------------------------------------------------
     long long i_local2;
     for (i_local2 = 0; i_local2 < local_n; i_local2++)
     {
         long long i_global = offset + i_local2;
-    
         long long start_col = (i_global - 5 < 0) ? 0 : (i_global - 5);
         long long end_col = (i_global + 5 >= N) ? (N - 1) : (i_global + 5);
-
-        // Clip again
         long long clipped_start = (start_col < halo_start) ? halo_start : start_col;
         long long clipped_end = (end_col > halo_end) ? halo_end : end_col;
-
-        // Where does this row begin in col_ind[]?
         long long row_start = (*row_ptr)[i_local2];
-        // How many columns in this row?
         long long row_len = nnz_per_row[i_local2];
 
-        // Fill them in
         long long k;
         for (k = 0; k < row_len; k++)
         {
@@ -204,17 +172,14 @@ int main(int argc, char *argv[])
     long long base = N / size;
     long long rem = N % size;
     long long local_n = base + ((rank < rem) ? 1 : 0);
-    
-    if (local_n == 0){
-    	// This rank has no rows. Skip everything safely:
-    	// Possibly do an MPI_Barrier, a gather of zero elements, etc.
-    	MPI_Barrier(MPI_COMM_WORLD);
-    	MPI_Finalize();
-    	return 0;
-      }    
-    
 
-	
+    if (local_n == 0)
+    {
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Finalize();
+        return 0;
+    }
+
     long long offset = 0;
     long long r;
     for (r = 0; r < rank; r++)
@@ -232,9 +197,10 @@ int main(int argc, char *argv[])
     long long halo_start = (offset - 5 < 0) ? 0 : (offset - 5);
     long long halo_end = ((offset + local_n - 1) + 5 >= N) ? (N - 1) : (offset + local_n - 1 + 5);
     long long local_x_size = halo_end - halo_start + 1;
-    if(local_x_size <=0){
-     local_x_size = 0;
-    }    
+    if (local_x_size <= 0)
+    {
+        local_x_size = 0;
+    }
 
     double *x_sub = (double *)malloc(local_x_size * sizeof(double));
     if (!x_sub)
@@ -258,53 +224,50 @@ int main(int argc, char *argv[])
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
 
-    // Determine neighbors
-    long long left_neighbor = (rank == 0) ? MPI_PROC_NULL : rank - 1;         // Left boundary
-    long long right_neighbor = (rank == size - 1) ? MPI_PROC_NULL : rank + 1; // Right boundary
+    long long left_neighbor = (rank == 0) ? MPI_PROC_NULL : rank - 1;
+    long long right_neighbor = (rank == size - 1) ? MPI_PROC_NULL : rank + 1;
 
-    // Allocate buffers for halo regions
-    double left_halo[5] = {0};  // Buffer to receive 5 elements from left neighbor
-    double right_halo[5] = {0}; // Buffer to receive 5 elements from right neighbor
-    double left_send[5] = {0};  // Buffer to send 5 elements to left neighbor
-    double right_send[5] = {0}; // Buffer to send 5 elements to right neighbor
+    double leftHalo[5] = {0};
+    double rightHalo[5] = {0};
+    double leftSend[5] = {0};
+    double rightSend[5] = {0};
 
-    // Fill send buffers with boundary values
     if (local_x_size >= 5)
     {
         int haloSend;
         for (haloSend = 0; haloSend < 5; haloSend++)
         {
             if (offset > 0)
-                left_send[haloSend] = x_sub[haloSend]; // First 5 elements for left neighbor
+            {
+                leftSend[haloSend] = x_sub[haloSend];
+            }
+
             if (offset + local_n < N)
-                right_send[haloSend] = x_sub[local_x_size - 5 + haloSend]; // Last 5 elements for right neighbor
+            {
+                rightSend[haloSend] = x_sub[local_x_size - 5 + haloSend];
+            }
         }
     }
 
-    // Exchange halo data with neighbors
-    MPI_Sendrecv(right_send, 5, MPI_DOUBLE, right_neighbor, 0,
-                 left_halo, 5, MPI_DOUBLE, left_neighbor, 0,
+    MPI_Sendrecv(rightSend, 5, MPI_DOUBLE, right_neighbor, 0,
+                leftHalo, 5, MPI_DOUBLE, left_neighbor, 0,
                  MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-    MPI_Sendrecv(left_send, 5, MPI_DOUBLE, left_neighbor, 1,
-                 right_halo, 5, MPI_DOUBLE, right_neighbor, 1,
+    MPI_Sendrecv(leftSend, 5, MPI_DOUBLE, left_neighbor, 1,
+                 rightHalo, 5, MPI_DOUBLE, right_neighbor, 1,
                  MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     MPI_Barrier(MPI_COMM_WORLD);
-    // Extend x_sub to include halo elements
     double *x_extended = (double *)malloc((local_x_size + 10) * sizeof(double));
     if (!x_extended)
     {
         fprintf(stderr, "Failed to allocate x_extended at Rank %lld\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
+    memcpy(x_extended, leftHalo, 5 * sizeof(double));
+    memcpy(x_extended + 5, x_sub, local_x_size * sizeof(double));
+    memcpy(x_extended + 5 + local_x_size, rightHalo, 5 * sizeof(double));
 
-    // Copy values to the extended array
-    memcpy(x_extended, left_halo, 5 * sizeof(double));                     // Add left halo
-    memcpy(x_extended + 5, x_sub, local_x_size * sizeof(double));          // Add local data
-    memcpy(x_extended + 5 + local_x_size, right_halo, 5 * sizeof(double)); // Add right halo
-
-    // SpmvMCsrLocally(local_n, offset, halo_start, local_x_size, row_ptr_local, col_ind_local, val_local, x_sub, yLocal);
     SpmvMCsrLocally(local_n, offset, halo_start, local_x_size + 10, row_ptr_local, col_ind_local, val_local, x_extended, yLocal);
 
     MPI_Barrier(MPI_COMM_WORLD);
