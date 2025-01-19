@@ -6,8 +6,7 @@
 ## Compile with: mpicc DataDependencyResolve.c -lm -O3
 ## Run with: mpirun -np <core_size> ./a.out <matrix_size>
 
-## Pseudo Code:
-
+Pseudo Code of The Program
 ## program ElevenBandedSpMV
 
     initialize MPI environment
