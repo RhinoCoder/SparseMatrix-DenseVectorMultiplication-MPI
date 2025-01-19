@@ -246,7 +246,6 @@ int main(int argc, char *argv[])
                  right_halo, 5, MPI_DOUBLE, right_neighbor, 1,
                  MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-
     MPI_Barrier(MPI_COMM_WORLD);
     // Extend x_sub to include halo elements
     double *x_extended = (double *)malloc((local_x_size + 10) * sizeof(double));
@@ -263,11 +262,11 @@ int main(int argc, char *argv[])
 
     // SpmvMCsrLocally(local_n, offset, halo_start, local_x_size, row_ptr_local, col_ind_local, val_local, x_sub, yLocal);
     SpmvMCsrLocally(local_n, offset, halo_start, local_x_size + 10, row_ptr_local, col_ind_local, val_local, x_extended, yLocal);
-    
+
     MPI_Barrier(MPI_COMM_WORLD);
     double t1 = MPI_Wtime();
     double localPassedTime = (t1 - t0) * 1000.0;
-    
+
     double *yGlobal = NULL;
     int *recvCounts = NULL;
     int *displs = NULL;
@@ -293,7 +292,6 @@ int main(int argc, char *argv[])
             fprintf(stderr, "Memory allocation failed on rank 0 for displs (size=%lld)\n", N);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
-        
 
         long long offset_r = 0;
         long long rr;
@@ -332,7 +330,10 @@ int main(int argc, char *argv[])
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-    int gCode = MPI_Gatherv(yLocal, (int)local_n, MPI_DOUBLE, yGlobal, recvCounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+
+
+    int gCode = MPI_Gatherv(yLocal, local_n, MPI_DOUBLE, yGlobal, recvCounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     if (gCode != MPI_SUCCESS)
     {
         char errMsg[MPI_MAX_ERROR_STRING];
@@ -340,7 +341,7 @@ int main(int argc, char *argv[])
         MPI_Error_string(gCode, errMsg, &msgLen);
         fprintf(stderr, "Error in MPI_Gatherv at rank %lld: %s\n", rank, errMsg);
         MPI_Abort(MPI_COMM_WORLD, gCode);
-    }
+    } 
 
     if (rank == 0)
     {
