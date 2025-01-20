@@ -1,3 +1,5 @@
+//@author RhinoCoder
+//Term Project
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,115 +8,110 @@
 #include <papi.h>
 #include <limits.h>
 
-void GenerateElevenBandedCsrLocal(long long rank, long long N,
-                                  long long offset, long long local_n,
-                                  long long **row_ptr, long long **col_ind,
-                                  double **val)
+void GenerateElevenBandedCsrLocal(long long rank, long long N,long long offset, long long localN,long long **rowPtr, long long **colInd,double **V)
 {
-    long long halo_start = (offset - 5 < 0) ? 0 : offset - 5;
-    long long halo_end = ((offset + local_n - 1) + 5 >= N)
+    long long haloStart = (offset - 5 < 0) ? 0 : offset - 5;
+    long long haloEnd = ((offset + localN - 1) + 5 >= N)
                              ? (N - 1)
-                             : (offset + local_n - 1 + 5);
+                             : (offset + localN - 1 + 5);
 
-    if (halo_start < 0 || halo_end >= N)
+    if (haloStart < 0 || haloEnd >= N)
     {
-        fprintf(stderr, "[Rank %lld] Halo region out of bounds: [%lld, %lld]\n",
-                rank, halo_start, halo_end);
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-    *row_ptr = (long long *)malloc((local_n + 1) * sizeof(long long));
-    if (!(*row_ptr))
-    {
-        fprintf(stderr, "[Rank %lld] Error allocate row_ptr.\n", rank);
+        fprintf(stderr, "[Rank %lld] Halo region out of bounds: [%lld, %lld]\n",rank, haloStart, haloEnd);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    long long *nnz_per_row = (long long *)calloc(local_n, sizeof(long long));
-    if (!nnz_per_row)
+    *rowPtr = (long long *)malloc((localN + 1) * sizeof(long long));
+    if (!(*rowPtr))
     {
-        fprintf(stderr, "[Rank %lld] Error allocate nnz_per_row.\n", rank);
+        fprintf(stderr, "[Rank %lld] Error allocate rowPtr.\n", rank);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    long long *nnzPerRow = (long long *)calloc(localN, sizeof(long long));
+    if (!nnzPerRow)
+    {
+        fprintf(stderr, "[Rank %lld] Error allocate nnzPerRow.\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     long long i_local;
-    for (i_local = 0; i_local < local_n; i_local++)
+    for (i_local = 0; i_local < localN; i_local++)
     {
         long long i_global = offset + i_local;
 
         long long start_col = (i_global - 5 < 0) ? 0 : (i_global - 5);
         long long end_col = (i_global + 5 >= N) ? (N - 1) : (i_global + 5);
-
-        long long clipped_start = (start_col < halo_start) ? halo_start : start_col;
-        long long clipped_end = (end_col > halo_end) ? halo_end : end_col;
+        long long clipped_start = (start_col < haloStart) ? haloStart : start_col;
+        long long clipped_end = (end_col > haloEnd) ? haloEnd : end_col;
 
         if (clipped_end >= clipped_start)
         {
-            nnz_per_row[i_local] = clipped_end - clipped_start + 1;
+            nnzPerRow[i_local] = clipped_end - clipped_start + 1;
         }
         else
         {
-            nnz_per_row[i_local] = 0;
+            nnzPerRow[i_local] = 0;
         }
     }
 
-    (*row_ptr)[0] = 0;
+    (*rowPtr)[0] = 0;
     long long i;
-    for (i = 0; i < local_n; i++)
+    for (i = 0; i < localN; i++)
     {
-        (*row_ptr)[i + 1] = (*row_ptr)[i] + nnz_per_row[i];
+        (*rowPtr)[i + 1] = (*rowPtr)[i] + nnzPerRow[i];
     }
 
-    long long local_nnz = (*row_ptr)[local_n];
+    long long localNNZ = (*rowPtr)[localN];
 
-    *col_ind = (long long *)malloc(local_nnz * sizeof(long long));
-    *val = (double *)malloc(local_nnz * sizeof(double));
-    if (!(*col_ind) || !(*val))
+    *colInd = (long long *)malloc(localNNZ * sizeof(long long));
+    *V = (double *)malloc(localNNZ * sizeof(double));
+    if (!(*colInd) || !(*V))
     {
-        fprintf(stderr, "[Rank %lld] Error allocate col_ind/val.\n", rank);
+        fprintf(stderr, "@[Rank %lld] Error allocate colInd/val.\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     long long i_local2;
-    for (i_local2 = 0; i_local2 < local_n; i_local2++)
+    for (i_local2 = 0; i_local2 < localN; i_local2++)
     {
         long long i_global = offset + i_local2;
         long long start_col = (i_global - 5 < 0) ? 0 : (i_global - 5);
         long long end_col = (i_global + 5 >= N) ? (N - 1) : (i_global + 5);
-        long long clipped_start = (start_col < halo_start) ? halo_start : start_col;
-        long long clipped_end = (end_col > halo_end) ? halo_end : end_col;
-        long long row_start = (*row_ptr)[i_local2];
-        long long row_len = nnz_per_row[i_local2];
+        long long clipped_start = (start_col < haloStart) ? haloStart : start_col;
+        long long clipped_end = (end_col > haloEnd) ? haloEnd : end_col;
+        long long row_start = (*rowPtr)[i_local2];
+        long long row_len = nnzPerRow[i_local2];
 
         long long k;
         for (k = 0; k < row_len; k++)
         {
             long long j_global = clipped_start + k;
-            (*col_ind)[row_start + k] = j_global;
-            (*val)[row_start + k] = (double)(rand() % 1000);
-            (*val)[row_start + k] = 1;
+            (*colInd)[row_start + k] = j_global;
+            (*V)[row_start + k] = (double)(rand() % 1000);
         }
     }
 
-    free(nnz_per_row);
+    free(nnzPerRow);
 }
 
-void SpmvMCsrLocally(long long local_n, long long offset, long long halo_start, long long local_x_size, const long long *row_ptr, const long long *col_ind, const double *val, const double *x_sub, double *yLocal)
+void SpmvMCsrLocally(long long localN, long long offset, long long haloStart, long long localXSize, const long long *rowPtr, const long long *colInd, const double *V, const double *subX, double *yLocal)
 {
     long long i_local;
-    for (i_local = 0; i_local < local_n; i_local++)
+    for (i_local = 0; i_local < localN; i_local++)
     {
         double sum = 0.0;
-        long long start = row_ptr[i_local];
-        long long end = row_ptr[i_local + 1];
+        long long start = rowPtr[i_local];
+        long long end = rowPtr[i_local + 1];
 
         long long k;
         for (k = start; k < end; k++)
         {
-            long long j_global = col_ind[k];
-            long long jExtended = j_global - halo_start + 5;
-            if (jExtended >= 0 && jExtended < local_x_size)
+            long long j_global = colInd[k];
+            long long jExtended = j_global - haloStart + 5;
+            if (jExtended >= 0 && jExtended < localXSize)
             {
-                sum += val[k] * x_sub[jExtended];
+                sum += V[k] * subX[jExtended];
             }
         }
         yLocal[i_local] = sum;
@@ -126,6 +123,7 @@ int main(int argc, char *argv[])
 
     int rankInt, sizeInt;
 
+    
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rankInt);
     MPI_Comm_size(MPI_COMM_WORLD, &sizeInt);
@@ -172,10 +170,11 @@ int main(int argc, char *argv[])
 
     long long base = N / size;
     long long rem = N % size;
-    long long local_n = base + ((rank < rem) ? 1 : 0);
+    long long localN = base + ((rank < rem) ? 1 : 0);
 
-    if (local_n == 0)
+    if (localN == 0)
     {
+        //If no process is assigned, terminate normally without cause any error.
         MPI_Barrier(MPI_COMM_WORLD);
         MPI_Finalize();
         return 0;
@@ -193,30 +192,32 @@ int main(int argc, char *argv[])
     long long *row_ptr_local = NULL;
     long long *col_ind_local = NULL;
     double *val_local = NULL;
-    GenerateElevenBandedCsrLocal(rank, N, offset, local_n, &row_ptr_local, &col_ind_local, &val_local);
+    
+    GenerateElevenBandedCsrLocal(rank, N, offset, localN, &row_ptr_local, &col_ind_local, &val_local);
     MPI_Barrier(MPI_COMM_WORLD);
-    long long halo_start = (offset - 5 < 0) ? 0 : (offset - 5);
-    long long halo_end = ((offset + local_n - 1) + 5 >= N) ? (N - 1) : (offset + local_n - 1 + 5);
-    long long local_x_size = halo_end - halo_start + 1;
-    if (local_x_size <= 0)
+    
+    long long haloStart = (offset - 5 < 0) ? 0 : (offset - 5);
+    long long haloEnd = ((offset + localN - 1) + 5 >= N) ? (N - 1) : (offset + localN - 1 + 5);
+    long long localXSize = haloEnd - haloStart + 1;
+    
+    if (localXSize <= 0)
     {
-        local_x_size = 0;
+        localXSize = 0;
     }
 
-    double *x_sub = (double *)malloc(local_x_size * sizeof(double));
-    if (!x_sub)
+    double *subX = (double *)malloc(localXSize * sizeof(double));
+    if (!subX)
     {
-        fprintf(stderr, "Rank:%lld Cannot allocate x_sub of size %lld\n", rank, local_x_size);
+        fprintf(stderr, "Rank:%lld Cannot allocate x_sub of size %lld\n", rank, localXSize);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
     long long i;
-    for (i = 0; i < local_x_size; i++)
+    for (i = 0; i < localXSize; i++)
     {
-        x_sub[i] = (double)(rand() % 1000);
-        x_sub[i] = 1;
+        subX[i] = (double)(rand() % 1000);
     }
 
-    double *yLocal = (double *)calloc(local_n, sizeof(double));
+    double *yLocal = (double *)calloc(localN, sizeof(double));
     if (!yLocal)
     {
         fprintf(stderr, " Failed to allocate yLocal @ Rank: %lld\n", rank);
@@ -225,21 +226,7 @@ int main(int argc, char *argv[])
 
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
-
-    printf("[Rank %lld] row_ptr: ", rank);
-    for (long long i = 0; i <= local_n; i++)
-        printf("%lld ", row_ptr_local[i]);
-    printf("\n");
-
-    printf("[Rank %lld] col_ind: ", rank);
-    for (long long i = 0; i < row_ptr_local[local_n]; i++)
-        printf("%lld ", col_ind_local[i]);
-    printf("\n");
-
-    printf("[Rank %lld] val: ", rank);
-    for (long long i = 0; i < row_ptr_local[local_n]; i++)
-        printf("%.2f ", val_local[i]);
-    printf("\n");
+ 
 
     long long left_neighbor = (rank == 0) ? MPI_PROC_NULL : rank - 1;
     long long right_neighbor = (rank == size - 1) ? MPI_PROC_NULL : rank + 1;
@@ -249,23 +236,23 @@ int main(int argc, char *argv[])
     double leftSend[5] = {0};
     double rightSend[5] = {0};
 
-    if (local_x_size >= 5)
+    if (localXSize >= 5)
     {
         int haloSend;
         for (haloSend = 0; haloSend < 5; haloSend++)
         {
             if (offset > 0)
             {
-                leftSend[haloSend] = x_sub[haloSend];
+                leftSend[haloSend] = subX[haloSend];
             }
             else
             {
                 leftSend[haloSend] = 0.0;
             }
 
-            if (offset + local_n < N)
+            if (offset + localN < N)
             {
-                rightSend[haloSend] = x_sub[local_x_size - 5 + haloSend];
+                rightSend[haloSend] = subX[localXSize - 5 + haloSend];
             }
             else
             {
@@ -273,16 +260,7 @@ int main(int argc, char *argv[])
             }
         }
     }
-
-    printf("[Rank %lld] leftHalo: ", rank);
-    for (int i = 0; i < 5; i++)
-        printf("%.2f ", leftHalo[i]);
-    printf("\n");
-
-    printf("[Rank %lld] rightHalo: ", rank);
-    for (int i = 0; i < 5; i++)
-        printf("%.2f ", rightHalo[i]);
-    printf("\n");
+ 
 
     int rightCode = MPI_Sendrecv(rightSend, 5, MPI_DOUBLE, right_neighbor, 0, leftHalo, 5, MPI_DOUBLE, left_neighbor, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     if (rightCode != MPI_SUCCESS)
@@ -290,7 +268,7 @@ int main(int argc, char *argv[])
         char errMsg[MPI_MAX_ERROR_STRING];
         int msgLen;
         MPI_Error_string(rightCode, errMsg, &msgLen);
-        fprintf(stderr, "Error in MPI_Sendrcv for right send at rank %lld: %s\n", rank, errMsg);
+        fprintf(stderr, "error in MPI_Sendrcv for right send at rank %lld: %s\n", rank, errMsg);
         MPI_Abort(MPI_COMM_WORLD, rightCode);
     }
 
@@ -300,42 +278,24 @@ int main(int argc, char *argv[])
         char errMsg[MPI_MAX_ERROR_STRING];
         int msgLen;
         MPI_Error_string(leftCode, errMsg, &msgLen);
-        fprintf(stderr, "Error in MPI_Sendrcv for left send at rank %lld: %s\n", rank, errMsg);
+        fprintf(stderr, "error in MPI_Sendrcv for left send at rank %lld: %s\n", rank, errMsg);
         MPI_Abort(MPI_COMM_WORLD, leftCode);
     }
-
-    printf("[Rank %lld] After exchange - leftHalo: ", rank);
-    for (int i = 0; i < 5; i++)
-        printf("%.2f ", leftHalo[i]);
-    printf("\n");
-
-    printf("[Rank %lld] After exchange - rightHalo: ", rank);
-    for (int i = 0; i < 5; i++)
-        printf("%.2f ", rightHalo[i]);
-    printf("\n");
-
-    if (rank == 0)
-    {
-        printf("Rank %lld Local yLocal: ", rank);
-        for (long long i = 0; i < local_n; i++)
-        {
-            printf("%.2f ", yLocal[i]);
-        }
-        printf("\n");
-    }
+ 
+    
 
     MPI_Barrier(MPI_COMM_WORLD);
-    double *x_extended = (double *)malloc((local_x_size + 10) * sizeof(double));
+    double *x_extended = (double *)malloc((localXSize + 10) * sizeof(double));
     if (!x_extended)
     {
-        fprintf(stderr, "Failed to allocate x_extended at Rank %lld\n", rank);
+        fprintf(stderr, "error x_extended at @Rank %lld\n", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
     memcpy(x_extended, leftHalo, 5 * sizeof(double));
-    memcpy(x_extended + 5, x_sub, local_x_size * sizeof(double));
-    memcpy(x_extended + 5 + local_x_size, rightHalo, 5 * sizeof(double));
+    memcpy(x_extended + 5, subX, localXSize * sizeof(double));
+    memcpy(x_extended + 5 + localXSize, rightHalo, 5 * sizeof(double));
 
-    SpmvMCsrLocally(local_n, offset, halo_start, local_x_size + 10, row_ptr_local, col_ind_local, val_local, x_extended, yLocal);
+    SpmvMCsrLocally(localN, offset, haloStart, localXSize + 10, row_ptr_local, col_ind_local, val_local, x_extended, yLocal);
 
     MPI_Barrier(MPI_COMM_WORLD);
     double t1 = MPI_Wtime();
@@ -367,14 +327,14 @@ int main(int argc, char *argv[])
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        long long offset_r = 0;
+        long long offsetR = 0;
         long long rr;
         for (rr = 0; rr < size; rr++)
         {
-            long long local_n_r = base + ((rr < rem) ? 1 : 0);
-            recvCounts[rr] = (int)local_n_r;
-            displs[rr] = (int)offset_r;
-            offset_r += local_n_r;
+            long long localNrr = base + ((rr < rem) ? 1 : 0);
+            recvCounts[rr] = (int)localNrr;
+            displs[rr] = (int)offsetR;
+            offsetR += localNrr;
         }
     }
 
@@ -386,8 +346,8 @@ int main(int argc, char *argv[])
         int rr;
         for (rr = 0; rr < size; rr++)
         {
-            printf("[Rank %lld] recvCounts[%d]: %d, displs[%d]: %d\n", rank, rr, recvCounts[rr], rr, displs[rr]);
-            fprintf(fp, "[Rank %lld] recvCounts[%d]: %d, displs[%d]: %d\n", rank, rr, recvCounts[rr], rr, displs[rr]);
+            printf("@[Rank %lld] recvCounts[%d]: %d, displs[%d]: %d\n", rank, rr, recvCounts[rr], rr, displs[rr]);
+            fprintf(fp, "@[Rank %lld] recvCounts[%d]: %d, displs[%d]: %d\n", rank, rr, recvCounts[rr], rr, displs[rr]);
         }
 
         long long totalRows = 0;
@@ -398,20 +358,20 @@ int main(int argc, char *argv[])
         }
         if (totalRows != N)
         {
-            fprintf(stderr, "[Rank: %lld] Total recvcounts (%lld) != N (%lld)\n", rank, totalRows, N);
+            fprintf(stderr, "@[Rank: %lld] Total recvcounts (%lld) != N (%lld)\n", rank, totalRows, N);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    int gCode = MPI_Gatherv(yLocal, local_n, MPI_DOUBLE, yGlobal, recvCounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    int gCode = MPI_Gatherv(yLocal, localN, MPI_DOUBLE, yGlobal, recvCounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     if (gCode != MPI_SUCCESS)
     {
         char errMsg[MPI_MAX_ERROR_STRING];
         int msgLen;
         MPI_Error_string(gCode, errMsg, &msgLen);
-        fprintf(stderr, "Error in MPI_Gatherv at rank %lld: %s\n", rank, errMsg);
+        fprintf(stderr, "Error in MPI_Gatherv @ rank %lld: %s\n", rank, errMsg);
         MPI_Abort(MPI_COMM_WORLD, gCode);
     }
 
@@ -421,7 +381,7 @@ int main(int argc, char *argv[])
         fprintf(fp, "yGlobal (first 5 entries): ");
 
         long long i;
-        for (i = 0; i < 12 && i < N; i++)
+        for (i = 0; i < 5 && i < N; i++)
         {
             fprintf(fp, "%.2f ", yGlobal[i]);
         }
@@ -433,6 +393,8 @@ int main(int argc, char *argv[])
         fprintf(fp, "...............................................\n");
         fprintf(fp, "PAPI Profiling Results\n");
         fprintf(fp, "...............................................\n\n");
+        //Insert papi results here, for base code it is not included in here,
+        //A papi inserted version of the code is provided, please check it out.
         free(yGlobal);
         free(recvCounts);
         free(displs);
@@ -440,7 +402,7 @@ int main(int argc, char *argv[])
     }
 
     free(yLocal);
-    free(x_sub);
+    free(subX);
     free(row_ptr_local);
     free(col_ind_local);
     free(val_local);
