@@ -91,6 +91,7 @@ void GenerateElevenBandedCsrLocal(long long rank, long long N,
             long long j_global = clipped_start + k;
             (*col_ind)[row_start + k] = j_global;
             (*val)[row_start + k] = (double)(rand() % 1000);
+            (*val)[row_start + k] = 1;
         }
     }
 
@@ -110,10 +111,10 @@ void SpmvMCsrLocally(long long local_n, long long offset, long long halo_start, 
         for (k = start; k < end; k++)
         {
             long long j_global = col_ind[k];
-            long long j_sub = j_global - halo_start;
-            if (j_sub >= 0 && j_sub < local_x_size)
+            long long jExtended = j_global - halo_start + 5;
+            if (jExtended >= 0 && jExtended < local_x_size)
             {
-                sum += val[k] * x_sub[j_sub];
+                sum += val[k] * x_sub[jExtended];
             }
         }
         yLocal[i_local] = sum;
@@ -212,6 +213,7 @@ int main(int argc, char *argv[])
     for (i = 0; i < local_x_size; i++)
     {
         x_sub[i] = (double)(rand() % 1000);
+        x_sub[i] = 1;
     }
 
     double *yLocal = (double *)calloc(local_n, sizeof(double));
@@ -223,6 +225,21 @@ int main(int argc, char *argv[])
 
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
+
+    printf("[Rank %lld] row_ptr: ", rank);
+    for (long long i = 0; i <= local_n; i++)
+        printf("%lld ", row_ptr_local[i]);
+    printf("\n");
+
+    printf("[Rank %lld] col_ind: ", rank);
+    for (long long i = 0; i < row_ptr_local[local_n]; i++)
+        printf("%lld ", col_ind_local[i]);
+    printf("\n");
+
+    printf("[Rank %lld] val: ", rank);
+    for (long long i = 0; i < row_ptr_local[local_n]; i++)
+        printf("%.2f ", val_local[i]);
+    printf("\n");
 
     long long left_neighbor = (rank == 0) ? MPI_PROC_NULL : rank - 1;
     long long right_neighbor = (rank == size - 1) ? MPI_PROC_NULL : rank + 1;
@@ -241,21 +258,71 @@ int main(int argc, char *argv[])
             {
                 leftSend[haloSend] = x_sub[haloSend];
             }
+            else
+            {
+                leftSend[haloSend] = 0.0;
+            }
 
             if (offset + local_n < N)
             {
                 rightSend[haloSend] = x_sub[local_x_size - 5 + haloSend];
             }
+            else
+            {
+                rightSend[haloSend] = 0.0;
+            }
         }
     }
 
-    MPI_Sendrecv(rightSend, 5, MPI_DOUBLE, right_neighbor, 0,
-                leftHalo, 5, MPI_DOUBLE, left_neighbor, 0,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    printf("[Rank %lld] leftHalo: ", rank);
+    for (int i = 0; i < 5; i++)
+        printf("%.2f ", leftHalo[i]);
+    printf("\n");
 
-    MPI_Sendrecv(leftSend, 5, MPI_DOUBLE, left_neighbor, 1,
-                 rightHalo, 5, MPI_DOUBLE, right_neighbor, 1,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    printf("[Rank %lld] rightHalo: ", rank);
+    for (int i = 0; i < 5; i++)
+        printf("%.2f ", rightHalo[i]);
+    printf("\n");
+
+    int rightCode = MPI_Sendrecv(rightSend, 5, MPI_DOUBLE, right_neighbor, 0, leftHalo, 5, MPI_DOUBLE, left_neighbor, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    if (rightCode != MPI_SUCCESS)
+    {
+        char errMsg[MPI_MAX_ERROR_STRING];
+        int msgLen;
+        MPI_Error_string(rightCode, errMsg, &msgLen);
+        fprintf(stderr, "Error in MPI_Sendrcv for right send at rank %lld: %s\n", rank, errMsg);
+        MPI_Abort(MPI_COMM_WORLD, rightCode);
+    }
+
+    int leftCode = MPI_Sendrecv(leftSend, 5, MPI_DOUBLE, left_neighbor, 1, rightHalo, 5, MPI_DOUBLE, right_neighbor, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    if (leftCode != MPI_SUCCESS)
+    {
+        char errMsg[MPI_MAX_ERROR_STRING];
+        int msgLen;
+        MPI_Error_string(leftCode, errMsg, &msgLen);
+        fprintf(stderr, "Error in MPI_Sendrcv for left send at rank %lld: %s\n", rank, errMsg);
+        MPI_Abort(MPI_COMM_WORLD, leftCode);
+    }
+
+    printf("[Rank %lld] After exchange - leftHalo: ", rank);
+    for (int i = 0; i < 5; i++)
+        printf("%.2f ", leftHalo[i]);
+    printf("\n");
+
+    printf("[Rank %lld] After exchange - rightHalo: ", rank);
+    for (int i = 0; i < 5; i++)
+        printf("%.2f ", rightHalo[i]);
+    printf("\n");
+
+    if (rank == 0)
+    {
+        printf("Rank %lld Local yLocal: ", rank);
+        for (long long i = 0; i < local_n; i++)
+        {
+            printf("%.2f ", yLocal[i]);
+        }
+        printf("\n");
+    }
 
     MPI_Barrier(MPI_COMM_WORLD);
     double *x_extended = (double *)malloc((local_x_size + 10) * sizeof(double));
@@ -354,7 +421,7 @@ int main(int argc, char *argv[])
         fprintf(fp, "yGlobal (first 5 entries): ");
 
         long long i;
-        for (i = 0; i < 5 && i < N; i++)
+        for (i = 0; i < 12 && i < N; i++)
         {
             fprintf(fp, "%.2f ", yGlobal[i]);
         }
@@ -381,6 +448,3 @@ int main(int argc, char *argv[])
     MPI_Finalize();
     return 0;
 }
-
-
- 

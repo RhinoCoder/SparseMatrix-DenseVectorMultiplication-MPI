@@ -9,7 +9,7 @@ Run with:
 ## mpirun -np <core_size> ./a.out <matrix_size>
 
 Pseudo Code of The Program
-## program ElevenBandedSpMV
+program ElevenBandedSpMV
 
     initialize MPI environment
     get process rank and total number of processes
@@ -66,5 +66,5 @@ Pseudo Code of The Program
     finalize MPI environment
     exit
 
-## end program
+end program
 
