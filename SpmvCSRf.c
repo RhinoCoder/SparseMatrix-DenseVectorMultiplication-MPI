@@ -1,23 +1,24 @@
 //@author RhinoCoder
-//Term Project
+// Term Project
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
-#include <papi.h>
-#include <limits.h>
 
-void GenerateElevenBandedCsrLocal(long long rank, long long N,long long offset, long long localN,long long **rowPtr, long long **colInd,double **V)
+void GenerateElevenBandedCsrLocal(long long rank, long long N, long long offset, long long localN, long long **rowPtr, long long **colInd, double **V)
 {
     long long haloStart = (offset - 5 < 0) ? 0 : offset - 5;
-    long long haloEnd = ((offset + localN - 1) + 5 >= N)
-                             ? (N - 1)
-                             : (offset + localN - 1 + 5);
+
+    long long haloEnd = offset + localN - 1 + 5;
+    if (haloEnd >= N)
+    {
+        haloEnd = N - 1;
+    }
 
     if (haloStart < 0 || haloEnd >= N)
     {
-        fprintf(stderr, "[Rank %lld] Halo region out of bounds: [%lld, %lld]\n",rank, haloStart, haloEnd);
+        fprintf(stderr, "[Rank %lld] Halo region out of bounds: [%lld, %lld]\n", rank, haloStart, haloEnd);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -108,8 +109,8 @@ void SpmvMCsrLocally(long long localN, long long offset, long long haloStart, lo
         for (k = start; k < end; k++)
         {
             long long j_global = colInd[k];
-            long long jExtended = j_global - haloStart + 5;
-            if (jExtended >= 0 && jExtended < localXSize)
+            long long jExtended = j_global + 5 - offset;
+            if (jExtended >= 0 && jExtended < localN + 10)
             {
                 sum += V[k] * subX[jExtended];
             }
@@ -123,7 +124,6 @@ int main(int argc, char *argv[])
 
     int rankInt, sizeInt;
 
-    
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rankInt);
     MPI_Comm_size(MPI_COMM_WORLD, &sizeInt);
@@ -174,7 +174,7 @@ int main(int argc, char *argv[])
 
     if (localN == 0)
     {
-        //If no process is assigned, terminate normally without cause any error.
+        // If no process is assigned, terminate normally without cause any error.
         MPI_Barrier(MPI_COMM_WORLD);
         MPI_Finalize();
         return 0;
@@ -192,14 +192,23 @@ int main(int argc, char *argv[])
     long long *row_ptr_local = NULL;
     long long *col_ind_local = NULL;
     double *val_local = NULL;
-    
+
     GenerateElevenBandedCsrLocal(rank, N, offset, localN, &row_ptr_local, &col_ind_local, &val_local);
     MPI_Barrier(MPI_COMM_WORLD);
-    
+
     long long haloStart = (offset - 5 < 0) ? 0 : (offset - 5);
-    long long haloEnd = ((offset + localN - 1) + 5 >= N) ? (N - 1) : (offset + localN - 1 + 5);
+
+    long long haloEnd = offset + localN - 1 + 5;
+    if (haloEnd >= N)
+    {
+        haloEnd = N - 1;
+    }
+
     long long localXSize = haloEnd - haloStart + 1;
-    
+
+    printf("[Rank %lld] offset=%lld, haloStart=%lld, haloEnd=%lld, localXSize=%lld\n",
+           rank, offset, haloStart, haloEnd, localXSize);
+
     if (localXSize <= 0)
     {
         localXSize = 0;
@@ -226,7 +235,6 @@ int main(int argc, char *argv[])
 
     MPI_Barrier(MPI_COMM_WORLD);
     double t0 = MPI_Wtime();
- 
 
     long long left_neighbor = (rank == 0) ? MPI_PROC_NULL : rank - 1;
     long long right_neighbor = (rank == size - 1) ? MPI_PROC_NULL : rank + 1;
@@ -260,29 +268,40 @@ int main(int argc, char *argv[])
             }
         }
     }
- 
 
-    int rightCode = MPI_Sendrecv(rightSend, 5, MPI_DOUBLE, right_neighbor, 0, leftHalo, 5, MPI_DOUBLE, left_neighbor, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    if (rightCode != MPI_SUCCESS)
+    if (rank > 0)
     {
-        char errMsg[MPI_MAX_ERROR_STRING];
-        int msgLen;
-        MPI_Error_string(rightCode, errMsg, &msgLen);
-        fprintf(stderr, "error in MPI_Sendrcv for right send at rank %lld: %s\n", rank, errMsg);
-        MPI_Abort(MPI_COMM_WORLD, rightCode);
+        MPI_Sendrecv(subX, 5, MPI_DOUBLE, rank - 1, 0,
+                     leftHalo, 5, MPI_DOUBLE, rank - 1, 1,
+                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 
-    int leftCode = MPI_Sendrecv(leftSend, 5, MPI_DOUBLE, left_neighbor, 1, rightHalo, 5, MPI_DOUBLE, right_neighbor, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    if (leftCode != MPI_SUCCESS)
+    if (rank < size - 1)
     {
-        char errMsg[MPI_MAX_ERROR_STRING];
-        int msgLen;
-        MPI_Error_string(leftCode, errMsg, &msgLen);
-        fprintf(stderr, "error in MPI_Sendrcv for left send at rank %lld: %s\n", rank, errMsg);
-        MPI_Abort(MPI_COMM_WORLD, leftCode);
+        MPI_Sendrecv(subX + localN - 5, 5, MPI_DOUBLE, rank + 1, 1,
+                     rightHalo, 5, MPI_DOUBLE, rank + 1, 0,
+                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
- 
-    
+
+    /*  int rightCode = MPI_Sendrecv(rightSend, 5, MPI_DOUBLE, right_neighbor, 0, leftHalo, 5, MPI_DOUBLE, left_neighbor, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+     if (rightCode != MPI_SUCCESS)
+     {
+         char errMsg[MPI_MAX_ERROR_STRING];
+         int msgLen;
+         MPI_Error_string(rightCode, errMsg, &msgLen);
+         fprintf(stderr, "error in MPI_Sendrcv for right send at rank %lld: %s\n", rank, errMsg);
+         MPI_Abort(MPI_COMM_WORLD, rightCode);
+     }
+
+     int leftCode = MPI_Sendrecv(leftSend, 5, MPI_DOUBLE, left_neighbor, 1, rightHalo, 5, MPI_DOUBLE, right_neighbor, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+     if (leftCode != MPI_SUCCESS)
+     {
+         char errMsg[MPI_MAX_ERROR_STRING];
+         int msgLen;
+         MPI_Error_string(leftCode, errMsg, &msgLen);
+         fprintf(stderr, "error in MPI_Sendrcv for left send at rank %lld: %s\n", rank, errMsg);
+         MPI_Abort(MPI_COMM_WORLD, leftCode);
+     } */
 
     MPI_Barrier(MPI_COMM_WORLD);
     double *x_extended = (double *)malloc((localXSize + 10) * sizeof(double));
@@ -307,6 +326,8 @@ int main(int argc, char *argv[])
 
     if (rank == 0)
     {
+ 
+
         yGlobal = (double *)malloc(N * sizeof(double));
         recvCounts = (int *)malloc(size * sizeof(int));
         displs = (int *)malloc(size * sizeof(int));
@@ -393,8 +414,8 @@ int main(int argc, char *argv[])
         fprintf(fp, "...............................................\n");
         fprintf(fp, "PAPI Profiling Results\n");
         fprintf(fp, "...............................................\n\n");
-        //Insert papi results here, for base code it is not included in here,
-        //A papi inserted version of the code is provided, please check it out.
+        // Insert papi results here, for base code it is not included in here,
+        // A papi inserted version of the code is provided, please check it out.
         free(yGlobal);
         free(recvCounts);
         free(displs);

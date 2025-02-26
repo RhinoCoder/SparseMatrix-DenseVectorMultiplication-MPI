@@ -4,23 +4,24 @@ _____________________
 
 > Eleven Banded Non Symmetric Sparse Matrix - Dense Vector Multiplication 
 
-N = 24000, size = 8
-@[Rank 0] recvCounts[0]: 3000, displs[0]: 0
-@[Rank 0] recvCounts[1]: 3000, displs[1]: 3000
-@[Rank 0] recvCounts[2]: 3000, displs[2]: 6000
-@[Rank 0] recvCounts[3]: 3000, displs[3]: 9000
-@[Rank 0] recvCounts[4]: 3000, displs[4]: 12000
-@[Rank 0] recvCounts[5]: 3000, displs[5]: 15000
-@[Rank 0] recvCounts[6]: 3000, displs[6]: 18000
-@[Rank 0] recvCounts[7]: 3000, displs[7]: 21000
+N = 13, size = 8
+[Rank 0] offset=0, haloStart=0, haloEnd=6, localXSize=7
+@[Rank 0] recvCounts[0]: 2, displs[0]: 0
+@[Rank 0] recvCounts[1]: 2, displs[1]: 2
+@[Rank 0] recvCounts[2]: 2, displs[2]: 4
+@[Rank 0] recvCounts[3]: 2, displs[3]: 6
+@[Rank 0] recvCounts[4]: 2, displs[4]: 8
+@[Rank 0] recvCounts[5]: 1, displs[5]: 10
+@[Rank 0] recvCounts[6]: 1, displs[6]: 11
+@[Rank 0] recvCounts[7]: 1, displs[7]: 12
 > Showing results.....
 
-yGlobal (first 5 entries): 1838913.00 1062684.00 1313568.00 2443751.00 1392063.00 
+yGlobal (first 5 entries): 1650340.00 1260637.00 1311069.00 2102464.00 1490083.00 
 ...............................................
-.....SpMV (Row-block) with N=24000, Proc Count=8 .....
+.....SpMV (Row-block) with N=13, Proc Count=8 .....
 ...............................................
 
-Elapsed time @ [rank 0]: 0.072 ms
+Elapsed time @ [rank 0]: 0.016 ms
 
 
 ...............................................
