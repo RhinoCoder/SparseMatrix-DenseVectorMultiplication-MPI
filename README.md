@@ -2,10 +2,10 @@
 -Sparse matrix-vector multiplication is a crucial operation in scientific computing, machine learning and deep learning. Data that is used in computation & simulation are most in the form of sparse representations. For instance, in natural language processing words are represented as hot vectors by the method called vector embeddings. In order to optimize and increase efficiency both in terms of complexity and time, compressed sparse row scheme is used, to practically have a complexity near linear by storing only the non zero elements of matrices and leveraging locality.    	
 -Implementation of such a parallel algorithm for multiplying a non-symmetric eleven-banded sparse matrix, represented in the compressed sparse row (CSR) format, with a dense vector is practiced on various sizes and approaches. In order to achieve a higher scalability, possible memory exceed that can be emerge from distribution of large data is prevented using a locally generated and a chunk based computation approach. For parallelization, message passing interface (MPI) is used. However, in order to scale and work with large size of sparse matrices, communication mechanisms should be kept as small as possible to prevent bottlenecks due to gigabytes of data size.
 
-Compile with: 
-### mpicc SpmvCSRf.c -lm -O3
-Run with: 
-### mpirun -np <core_size> ./a.out <matrix_size>
+### Compile with: 
+mpicc SpmvCSRf.c -lm -O3
+### Run with: 
+mpirun -np <core_size> ./a.out <matrix_size>
 
 ## Pseudo Code of The Program
 
